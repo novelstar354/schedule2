@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>時間スロット付き完全スケジュールアプリ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family:sans-serif; margin:0; padding:10px; background:#f0f0f0; }
+h1 { text-align:center; margin-bottom:10px; }
+#controls { text-align:center; margin-bottom:10px; }
+button { padding:5px 10px; margin:0 3px; font-size:14px; cursor:pointer; }
+#schedule-form { display:flex; flex-wrap:wrap; justify-content:center; gap:5px; margin-bottom:10px; }
+#schedule-form input, #schedule-form select, #schedule-form button { padding:5px; font-size:14px; }
+
+#calendar { display:grid; grid-template-columns: repeat(8, 1fr); gap:2px; max-width:1200px; margin:auto; overflow-x:auto; }
+.time-slot { border:1px solid #ccc; min-height:40px; position:relative; background:#fff; }
+.time-label { font-size:10px; position:absolute; left:0; top:0; background:#eee; padding:1px 3px; }
+.task { position:absolute; left:0; right:0; padding:2px 3px; font-size:12px; border-radius:3px; cursor:pointer; color:#fff; }
+.category-work { background:#007BFF; }
+.category-school { background:#28A745; }
+.category-personal { background:#FFC107; color:#000; }
+.dragging { opacity:0.5; z-index:1000; }
+
+#edit-modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; justify-content:center; align-items:center; }
+#edit-modal-content { background:#fff; padding:20px; border-radius:5px; width:300px; }
+#edit-modal-content input, #edit-modal-content select, #edit-modal-content button { margin:5px 0; width:100%; padding:8px; font-size:14px; }
+</style>
+</head>
+<body>
+
+<h1>時間スロット付き完全スケジュールアプリ</h1>
+
+<div id="controls">
+  <button id="month-view-btn">月表示</button>
+  <button id="week-view-btn">週表示</button>
+  <button id="day-view-btn">日表示</button>
+</div>
+
+<div id="schedule-form">
+  <input type="date" id="date" required>
+  <input type="time" id="time" required>
+  <input type="text" id="task" placeholder="予定" required>
+  <select id="category">
+    <option value="work">仕事</option>
+    <option value="school">学校</option>
+    <option value="personal">プライベート</option>
+  </select>
+  <select id="repeat">
+    <option value="none">繰り返しなし</option>
+    <option value="daily">毎日</option>
+    <option value="weekly">毎週</option>
+    <option value="monthly">毎月</option>
+  </select>
+  <input type="number" id="notify-min" placeholder="通知(分前)" min="0">
+  <button id="add">追加</button>
+</div>
+
+<div id="calendar"></div>
+
+<div id="edit-modal">
+  <div id="edit-modal-content">
+    <h3>予定編集</h3>
+    <input type="date" id="edit-date">
+    <input type="time" id="edit-time">
+    <input type="text" id="edit-task">
+    <select id="edit-category">
+      <option value="work">仕事</option>
+      <option value="school">学校</option>
+      <option value="personal">プライベート</option>
+    </select>
+    <select id="edit-repeat">
+      <option value="none">繰り返しなし</option>
+      <option value="daily">毎日</option>
+      <option value="weekly">毎週</option>
+      <option value="monthly">毎月</option>
+    </select>
+    <input type="number" id="edit-notify-min" placeholder="通知(分前)" min="0">
+    <button id="save-edit">保存</button>
+    <button id="cancel-edit">キャンセル</button>
+  </div>
+</div>
+
+<audio id="reminder-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
+
+<script>
+const dateInput=document.getElementById('date');
+const timeInput=document.getElementById('time');
+const taskInput=document.getElementById('task');
+const categoryInput=document.getElementById('category');
+const repeatInput=document.getElementById('repeat');
+const notifyInput=document.getElementById('notify-min');
+const addBtn=document.getElementById('add');
+const calendar=document.getElementById('calendar');
+
+const monthViewBtn=document.getElementById('month-view-btn');
+const weekViewBtn=document.getElementById('week-view-btn');
+const dayViewBtn=document.getElementById('day-view-btn');
+
+const editModal=document.getElementById('edit-modal');
+const editDateInput=document.getElementById('edit-date');
+const editTimeInput=document.getElementById('edit-time');
+const editTaskInput=document.getElementById('edit-task');
+const editCategoryInput=document.getElementById('edit-category');
+const editRepeatInput=document.getElementById('edit-repeat');
+const editNotifyInput=document.getElementById('edit-notify-min');
+const saveEditBtn=document.getElementById('save-edit');
+const cancelEditBtn=document.getElementById('cancel-edit');
+const reminderSound=document.getElementById('reminder-sound');
+
+let schedules=JSON.parse(localStorage.getItem('schedules'))||[];
+let editIndex=null;
+let currentView='month';
+let dragData=null;
+
+if(Notification.permission!=="granted") Notification.requestPermission();
+
+function saveSchedules(){localStorage.setItem('schedules',JSON.stringify(schedules));}
+function sortSchedules(){schedules.sort((a,b)=>a.date!==b.date?a.date.localeCompare(b.date):a.time.localeCompare(b.time));}
+
+function render(){
+  calendar.innerHTML='';
+  sortSchedules();
+  const today=new Date();
+  let displayDates=[...new Set(schedules.map(s=>s.date))];
+  if(currentView==='week'){
+    const startOfWeek=new Date(today);
+    startOfWeek.setDate(today.getDate()-today.getDay());
+    displayDates=[];
+    for(let i=0;i<7;i++){
+      const d=new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate()+i);
+      displayDates.push(d.toISOString().split('T')[0]);
+    }
+  }
+  if(currentView==='day') displayDates=[today.toISOString().split('T')[0]];
+
+  // グリッド列：1列目=時間ラベル
+  calendar.style.gridTemplateColumns=`50px repeat(${displayDates.length}, 1fr)`;
+  
+  // 時間ラベル
+  for(let h=0;h<24;h++){
+    const label=document.createElement('div');
+    label.className='time-slot';
+    label.style.gridColumn='1';
+    label.innerHTML=`<span class="time-label">${h}:00</span>`;
+    label.style.minHeight='40px';
+    calendar.appendChild(label);
+    displayDates.forEach(date=>{
+      const cell=document.createElement('div');
+      cell.className='time-slot';
+      cell.dataset.date=date;
+      cell.dataset.hour=h;
+      // ドロップ
+      cell.addEventListener('dragover',e=>e.preventDefault());
+      cell.addEventListener('drop',e=>{
+        e.preventDefault();
+        if(dragData!==null){
+          schedules[dragData.index].date=date;
+          schedules[dragData.index].time=(h<10?'0'+h:h)+':00';
+          saveSchedules();
+          render();
+          dragData=null;
+        }
+      });
+      calendar.appendChild(cell);
+    });
+  }
+
+  schedules.forEach((s,i)=>{
+    const hour=parseInt(s.time.split(':')[0]);
+    const cells=[...calendar.querySelectorAll(`.time-slot[data-date="${s.date}"][data-hour="${hour}"]`)];
+    if(cells.length>0){
+      const taskDiv=document.createElement('div');
+      taskDiv.className='task category-'+s.category;
+      taskDiv.draggable=true;
+      taskDiv.textContent=s.task;
+      taskDiv.style.top='0';
+      cells[0].appendChild(taskDiv);
+
+      taskDiv.addEventListener('dragstart',()=>{taskDiv.classList.add('dragging'); dragData={index:i};});
+      taskDiv.addEventListener('dragend',()=>{taskDiv.classList.remove('dragging'); dragData=null;});
+
+      taskDiv.onclick=(e)=>{if(e.target!==taskDiv) return; openEditModal(s.date,i);}
+      
+      const taskDateTime=new Date(s.date+'T'+s.time);
+      const now=new Date();
+      const notifyMinutes=parseInt(s.notify||0);
+      if(taskDateTime-now>0 && taskDateTime-now<=notifyMinutes*60000+1000){
+        new Notification('予定通知',{body:s.task});
+        reminderSound.play();
+      }
+    }
+  });
+}
+
+function deleteTask(date,index){
+  const filteredIndexes=schedules.reduce((acc,s,i)=>{if(s.date===date) acc.push(i); return acc;},[]);
+  schedules.splice(filteredIndexes[index],1);
+  saveSchedules();
+  render();
+}
+
+function openEditModal(date,index){
+  editIndex=schedules.findIndex((s,i)=>s.date===date && i===index);
+  const s=schedules[editIndex];
+  editDateInput.value=s.date;
+  editTimeInput.value=s.time;
+  editTaskInput.value=s.task;
+  editCategoryInput.value=s.category;
+  editRepeatInput.value=s.repeat||'none';
+  editNotifyInput.value=s.notify||0;
+  editModal.style.display='flex';
+}
+
+saveEditBtn.addEventListener('click',()=>{
+  if(editIndex===null) return;
+  schedules[editIndex].date=editDateInput.value;
+  schedules[editIndex].time=editTimeInput.value;
+  schedules[editIndex].task=editTaskInput.value;
+  schedules[editIndex].category=editCategoryInput.value;
+  schedules[editIndex].repeat=editRepeatInput.value;
+  schedules[editIndex].notify=editNotifyInput.value;
+  saveSchedules();
+  editModal.style.display='none';
+  editIndex=null;
+  render();
+});
+
+cancelEditBtn.addEventListener('click',()=>{editModal.style.display='none'; editIndex=null;});
+
+addBtn.addEventListener('click',()=>{
+  if(!dateInput.value||!timeInput.value||!taskInput.value) return alert('日付・時間・予定を入力してください');
+  schedules.push({date:dateInput.value,time:timeInput.value,task:taskInput.value,category:categoryInput.value,repeat:repeatInput.value,notify:notifyInput.value||0});
+  saveSchedules();
+  render();
+  taskInput.value=''; timeInput.value=''; notifyInput.value='';
+});
+
+monthViewBtn.addEventListener('click',()=>{currentView='month'; render();});
+weekViewBtn.addEventListener('click',()=>{currentView='week'; render();});
+dayViewBtn.addEventListener('click',()=>{currentView='day'; render();});
+
+render();
+</script>
+
+</body>
+</html>
