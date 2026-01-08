@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>時間スロット付き完全スケジュールアプリ</title>
+<title>スケジュールアプリ</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <link rel="icon" href="https://play-lh.googleusercontent.com/EXxP_wft--xCa61ERXENd3FYa3kw9dQOEzRsfJj5P7RCE-9Veo9t7gZD-8JltGmQueC9=w240-h480-rw" sizes="16×16" type="image/png" />  
 <style>
 body { font-family:sans-serif; margin:0; padding:10px; background:#f0f0f0; }
 h1 { text-align:center; margin-bottom:10px; }
@@ -24,11 +25,19 @@ button { padding:5px 10px; margin:0 3px; font-size:14px; cursor:pointer; }
 #edit-modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; justify-content:center; align-items:center; }
 #edit-modal-content { background:#fff; padding:20px; border-radius:5px; width:300px; }
 #edit-modal-content input, #edit-modal-content select, #edit-modal-content button { margin:5px 0; width:100%; padding:8px; font-size:14px; }
+   footer {
+           padding: 30px;
+           text-align: center;
+           font-size: 0.85rem;
+           color: rgba(255,255,255,0.5);
+           border-top: 1px solid rgba(255,255,255,0.1);
+           margin-top: 60px;
+   }
 </style>
 </head>
 <body>
 
-<h1>時間スロット付き完全スケジュールアプリ</h1>
+<h1>スケジュールアプリ</h1>
 
 <div id="controls">
   <button id="month-view-btn">月表示</button>
@@ -81,6 +90,11 @@ button { padding:5px 10px; margin:0 3px; font-size:14px; cursor:pointer; }
 </div>
 
 <audio id="reminder-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
+
+   <footer>
+       © 2025 STAR TOOLS - All Rights Reserved.
+   </footer>
+
 
 <script>
 const dateInput=document.getElementById('date');
